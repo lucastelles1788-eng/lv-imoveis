@@ -68,7 +68,7 @@ async function mostrarVitrineLV() {
 
     aviso.replaceWith(vitrine);
   } catch (erro) {
-    console.error("Erro ao carregar imóveis L&V:", erro);
+   aviso.textContent = "Erro na conexão: " + erro.message;
   }
 }
 
