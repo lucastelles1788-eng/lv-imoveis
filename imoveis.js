@@ -8,7 +8,7 @@ async function carregarImoveisLV() {
 
   const filtros = new URLSearchParams({
     select: "id,titulo,descricao,tipo,finalidade,cidade,bairro,preco,area,dormitorios,banheiros,vagas,fotos,destaque",
-    status: "eq.Disponível",
+    status: "eq.disponível",
     order: "criado_em.desc"
   });
 
