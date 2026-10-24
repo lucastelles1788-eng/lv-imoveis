@@ -8,7 +8,10 @@ async function mostrarVitrineLV() {
   try {
     const imoveis = await window.carregarImoveisLV();
 
-    if (!imoveis.length) return;
+    if (!imoveis.length) {
+  aviso.textContent = "Nenhum imóvel retornou do Supabase.";
+  return;
+}
 
     const vitrine = document.createElement("div");
     vitrine.className = "lv-vitrine";
