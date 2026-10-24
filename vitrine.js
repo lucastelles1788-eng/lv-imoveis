@@ -1,4 +1,4 @@
-
+alert("L&V: vitrine.js carregou!");
 async function mostrarVitrineLV() {
   const aviso = [...document.querySelectorAll(".empty")]
     .find(el => el.textContent.includes("Em breve, nossos imóveis"));
