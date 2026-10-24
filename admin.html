@@ -24,7 +24,120 @@ function open(r=null){editing=r?.id??null;const f=$('imovelForm');f.reset();for(
 $('novo').onclick=()=>open();$('cancelar').onclick=()=>show('editor',false);
 $('lista').onclick=async e=>{const edit=e.target.closest('[data-edit]'),del=e.target.closest('[data-del]');if(edit){open(rows[Number(edit.dataset.edit)]);return}if(del){const r=rows[Number(del.dataset.del)];if(!confirm('Excluir DEFINITIVAMENTE '+r.titulo+'?'))return;const {error}=await db.from(table).delete().eq('id',r.id);if(error)msg('Exclusão não autorizada: '+error.message,true);else await list()}};
 $('imovelForm').onsubmit=async e=>{e.preventDefault();if(!user)return;const f=e.target;const val=k=>f.elements[k].value.trim();const num=k=>val(k)===''?null:Number(val(k));const urls=val('fotos').split(/\n/).map(s=>s.trim()).filter(Boolean);if(urls.some(x=>!/^https:\/\//i.test(x))){msg('As fotos devem ter links HTTPS válidos.',true);return}const obj={titulo:val('titulo'),tipo:val('tipo'),finalidade:val('finalidade'),cidade:val('cidade'),bairro:val('bairro'),preco:num('preco'),area:num('area'),dormitorios:num('dormitorios'),banheiros:num('banheiros'),vagas:num('vagas'),status:val('status'),descricao:val('descricao'),fotos:urls,destaque:f.elements.destaque.checked};$('salvar').disabled=true;const res=editing?await db.from(table).update(obj).eq('id',editing).select('id'):await db.from(table).insert(obj).select('id');$('salvar').disabled=false;if(res.error){msg('Não foi possível salvar: '+res.error.message,true);return}if(!res.data?.length){msg('Nenhuma linha foi alterada. Confira as permissões RLS.',true);return}show('editor',false);await list();msg('Imóvel salvo com sucesso!')};
-const retorno = new URLSearchParams(location.hash.slice(1));
+// Adicionar fotos da galeria
+const campoFotos = $('imovelForm').elements.fotos;
+const seletorFotos = document.createElement('input');
+seletorFotos.type = 'file';
+seletorFotos.accept = 'image/*';
+seletorFotos.multiple = true;
+seletorFotos.hidden = true;
+
+const botaoFotos = document.createElement('button');
+botaoFotos.type = 'button';
+botaoFotos.textContent = 'Adicionar fotos da galeria';
+botaoFotos.style.marginTop = '12px';
+
+campoFotos.after(botaoFotos, seletorFotos);
+
+const avisoFotos = seletorFotos.nextElementSibling;
+if (avisoFotos?.matches('p.muted')) {
+  avisoFotos.textContent =
+    'Selecione as fotos, aguarde o envio e toque em Salvar imóvel.';
+}
+
+let enviandoFotos = false;
+botaoFotos.onclick = () => seletorFotos.click();
+
+$('imovelForm').addEventListener('submit', e => {
+  if (enviandoFotos) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+}, true);
+
+async function prepararFoto(arquivo) {
+  const endereco = URL.createObjectURL(arquivo);
+  try {
+    const imagem = new Image();
+    imagem.src = endereco;
+    await imagem.decode();
+
+    const escala = Math.min(
+      1, 1920 / Math.max(imagem.width, imagem.height)
+    );
+    const tela = document.createElement('canvas');
+    tela.width = Math.max(1, Math.round(imagem.width * escala));
+    tela.height = Math.max(1, Math.round(imagem.height * escala));
+    const contexto = tela.getContext('2d');
+    contexto.fillStyle = '#ffffff';
+    contexto.fillRect(0, 0, tela.width, tela.height);
+    contexto.drawImage(imagem, 0, 0, tela.width, tela.height);
+
+    return await new Promise((resolve, reject) => {
+      tela.toBlob(
+        foto => foto
+          ? resolve(foto)
+          : reject(new Error('Não foi possível preparar a foto.')),
+        'image/jpeg',
+        0.85
+      );
+    });
+  } catch {
+    throw new Error(
+      'Não foi possível abrir esta foto. Tente uma versão JPG ou PNG.'
+    );
+  } finally {
+    URL.revokeObjectURL(endereco);
+  }
+}
+
+seletorFotos.onchange = async () => {
+  const arquivos = Array.from(seletorFotos.files || []);
+  if (!arquivos.length || enviandoFotos) return;
+  if (!user) {
+    msg('Entre no painel para enviar fotos.', true);
+    return;
+  }
+
+  enviandoFotos = true;
+  const controles = Array.from(document.querySelectorAll(
+    '#app button, #app input, #app select, #app textarea'
+  ));
+  const estados = controles.map(c => c.disabled);
+  controles.forEach(c => c.disabled = true);
+  let enviados = 0;
+
+  try {
+    for (const arquivo of arquivos) {
+      msg(`Enviando foto ${enviados + 1} de ${arquivos.length}...`);
+      const foto = await prepararFoto(arquivo);
+      const caminho = `${user.id}/${crypto.randomUUID()}.jpg`;
+      const storage = db.storage.from('Imoveis');
+      const { error } = await storage.upload(caminho, foto, {
+        contentType: 'image/jpeg',
+        upsert: false
+      });
+      if (error) throw error;
+
+      const { data } = storage.getPublicUrl(caminho);
+      campoFotos.value = [
+        campoFotos.value.trim(), data.publicUrl
+      ].filter(Boolean).join('\n');
+      enviados++;
+    }
+    msg('Fotos enviadas! Toque em Salvar imóvel para vinculá-las ao anúncio.');
+  } catch (erro) {
+    msg(
+      `${enviados} foto(s) enviada(s). Erro: ${erro.message} ` +
+      'Os links das fotos já enviadas foram mantidos.',
+      true
+    );
+  } finally {
+    controles.forEach((c, i) => c.disabled = estados[i]);
+    enviandoFotos = false;
+    seletorFotos.value = '';
+  }
+};const retorno = new URLSearchParams(location.hash.slice(1));
 const recuperando = retorno.get('type') === 'recovery';
 const erroLink = retorno.has('error') ||
   new URLSearchParams(location.search).has('error');
