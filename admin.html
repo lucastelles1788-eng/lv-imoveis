@@ -24,6 +24,82 @@ function open(r=null){editing=r?.id??null;const f=$('imovelForm');f.reset();for(
 $('novo').onclick=()=>open();$('cancelar').onclick=()=>show('editor',false);
 $('lista').onclick=async e=>{const edit=e.target.closest('[data-edit]'),del=e.target.closest('[data-del]');if(edit){open(rows[Number(edit.dataset.edit)]);return}if(del){const r=rows[Number(del.dataset.del)];if(!confirm('Excluir DEFINITIVAMENTE '+r.titulo+'?'))return;const {error}=await db.from(table).delete().eq('id',r.id);if(error)msg('Exclusão não autorizada: '+error.message,true);else await list()}};
 $('imovelForm').onsubmit=async e=>{e.preventDefault();if(!user)return;const f=e.target;const val=k=>f.elements[k].value.trim();const num=k=>val(k)===''?null:Number(val(k));const urls=val('fotos').split(/\n/).map(s=>s.trim()).filter(Boolean);if(urls.some(x=>!/^https:\/\//i.test(x))){msg('As fotos devem ter links HTTPS válidos.',true);return}const obj={titulo:val('titulo'),tipo:val('tipo'),finalidade:val('finalidade'),cidade:val('cidade'),bairro:val('bairro'),preco:num('preco'),area:num('area'),dormitorios:num('dormitorios'),banheiros:num('banheiros'),vagas:num('vagas'),status:val('status'),descricao:val('descricao'),fotos:urls,destaque:f.elements.destaque.checked};$('salvar').disabled=true;const res=editing?await db.from(table).update(obj).eq('id',editing).select('id'):await db.from(table).insert(obj).select('id');$('salvar').disabled=false;if(res.error){msg('Não foi possível salvar: '+res.error.message,true);return}if(!res.data?.length){msg('Nenhuma linha foi alterada. Confira as permissões RLS.',true);return}show('editor',false);await list();msg('Imóvel salvo com sucesso!')};
-await authorize();
+const retorno = new URLSearchParams(location.hash.slice(1));
+const recuperando = retorno.get('type') === 'recovery';
+const erroLink = retorno.has('error') ||
+  new URLSearchParams(location.search).has('error');
+
+if (erroLink) {
+  show('login', true);
+  show('app', false);
+  history.replaceState(null, '', location.pathname);
+  msg('O link expirou ou é inválido. Solicite outro e-mail de recuperação.', true);
+} else if (recuperando) {
+  show('login', false);
+  show('app', false);
+
+  const { data, error } = await db.auth.getSession();
+
+  if (error || !data.session) {
+    show('login', true);
+    msg('Não foi possível validar o link. Solicite outro e-mail de recuperação.', true);
+  } else {
+    history.replaceState(null, '', location.pathname);
+
+    const caixa = document.createElement('section');
+    caixa.className = 'box';
+    caixa.innerHTML = `
+      <h2>Criar nova senha</h2>
+      <form id="novaSenhaForm">
+        <label for="novaSenha">Nova senha</label>
+        <input id="novaSenha" type="password"
+          autocomplete="new-password" minlength="8" required>
+        <label for="confirmaSenha">Confirmar nova senha</label>
+        <input id="confirmaSenha" type="password"
+          autocomplete="new-password" minlength="8" required>
+        <p class="muted">Use pelo menos 8 caracteres.</p>
+        <p><button id="trocarSenhaBtn" type="submit">
+          Salvar nova senha
+        </button></p>
+      </form>
+    `;
+    $('msg').before(caixa);
+    msg('Link validado. Cadastre sua nova senha.');
+
+    $('novaSenhaForm').onsubmit = async e => {
+      e.preventDefault();
+      const senha = $('novaSenha').value;
+
+      if (senha !== $('confirmaSenha').value) {
+        msg('As duas senhas precisam ser iguais.', true);
+        return;
+      }
+
+      $('trocarSenhaBtn').disabled = true;
+      msg('Salvando nova senha...');
+
+      try {
+        const resultado = await db.auth.updateUser({
+          password: senha
+        });
+
+        if (resultado.error) throw resultado.error;
+
+        $('novaSenhaForm').reset();
+        await db.auth.signOut();
+        caixa.remove();
+        show('login', true);
+        msg('Senha alterada! Entre com seu e-mail e a nova senha.');
+      } catch (erro) {
+        msg('Não foi possível concluir: ' + erro.message, true);
+      } finally {
+        const botao = $('trocarSenhaBtn');
+        if (botao) botao.disabled = false;
+      }
+    };
+  }
+} else {
+  await authorize();
+}
 })();
 </script></body></html>
